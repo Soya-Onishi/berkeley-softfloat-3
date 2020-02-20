@@ -41,8 +41,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 uint32_t softfloat_shiftRightJam32( uint32_t a, uint_fast16_t dist )
 {
-
-    return
+   // a>>dist | ((uint32_t) (a<<(-dist & 31)) != 0)
+   // |...a...|..b..| |..b..|の部分が a >> dist によって消える部分だとすると
+   // (a << (-dist & 31)) != 0) はその消えた部分が0じゃなかったかどうかを確認している
+   // NOTE: (-dist & 31) で (31 - dist) + 1 と等価になる
+   // 
+   // もし0ではなかった場合は (a >> dist) のLSBに1をセットする（スティッキービットの処理っぽい？）
+   // 
+   // dist が31より大きい場合はシフトで全部消えるので，単に a != 0 で消えた部分が0だったかどうか確認している
+   return
         (dist < 31) ? a>>dist | ((uint32_t) (a<<(-dist & 31)) != 0) : (a != 0);
 
 }

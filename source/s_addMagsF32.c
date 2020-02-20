@@ -69,7 +69,8 @@ float32_t softfloat_addMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
         *--------------------------------------------------------------------*/
 
        // expA と expB が 0x00 のとき
-       // sigA の値は関係ない
+       // sigA が0のときは => 0
+       //       それ以外は => 非正規化数
         if ( ! expA ) {
             uiZ = uiA + sigB;
             goto uiZ;
@@ -88,7 +89,8 @@ float32_t softfloat_addMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
         signZ = signF32UI( uiA );
         expZ = expA;
 
-        // 0x0100_0000 を加算するのが謎
+        // ケチ表現によって消えている 1.xx の部分が足されたことで 2.xx になった
+        // そのため，0x0100_0000 によって 25ビット目に1をセットしている（ケチ表現の1.xxは24ビット目に1をセットしていることに相当する）
         sigZ = 0x01000000 + sigA + sigB;
 
         // !(sigZ & 1) => 奇数じゃないか見てる？
@@ -107,12 +109,18 @@ float32_t softfloat_addMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
         sigA <<= 6;
         sigB <<= 6;
         if ( expDiff < 0 ) {
+            // sigA のほうが小さいので，sigA を右シフトする
+
             if ( expB == 0xFF ) {
                 if ( sigB ) goto propagateNaN;
                 uiZ = packToF32UI( signZ, 0xFF, 0 );
                 goto uiZ;
             }
             expZ = expB;
+
+            // 非正規化数の場合は仮数部を2倍？（謎）
+            // それ以外のときは仮数部の24ビット目に1をセット（ケチ表現の解消）
+            // 上で sigA は 6ビットシフトされていることに注意
             sigA += expA ? 0x20000000 : sigA;
             sigA = softfloat_shiftRightJam32( sigA, -expDiff );
         } else {
@@ -125,6 +133,8 @@ float32_t softfloat_addMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
             sigB += expB ? 0x20000000 : sigB;
             sigB = softfloat_shiftRightJam32( sigB, expDiff );
         }
+
+        // 右シフトしなかった方の仮数部のケチ表現分も加算（0x2000_0000）
         sigZ = 0x20000000 + sigA + sigB;
         if ( sigZ < 0x40000000 ) {
             --expZ;
