@@ -62,25 +62,43 @@ float32_t softfloat_addMagsF32( uint_fast32_t uiA, uint_fast32_t uiB )
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
     expDiff = expA - expB;
+
+    // expA と expB が同じ時
     if ( ! expDiff ) {
         /*--------------------------------------------------------------------
         *--------------------------------------------------------------------*/
+
+       // expA と expB が 0x00 のとき
+       // sigA の値は関係ない
         if ( ! expA ) {
             uiZ = uiA + sigB;
             goto uiZ;
         }
+
+        // expA と expB が 0xFF のとき
+        // sigA または sigB が0以外ならNaN
+        // sigA と sigB が0なら無限大
         if ( expA == 0xFF ) {
             if ( sigA | sigB ) goto propagateNaN;
             uiZ = uiA;
             goto uiZ;
         }
+
+        // 以降は expA と expB が0x00でも0xFFでもない場合
         signZ = signF32UI( uiA );
         expZ = expA;
+
+        // 0x0100_0000 を加算するのが謎
         sigZ = 0x01000000 + sigA + sigB;
+
+        // !(sigZ & 1) => 奇数じゃないか見てる？
+        // exp < 0xFE  => なんで exp <= 0xFE じゃないの？
         if ( ! (sigZ & 1) && (expZ < 0xFE) ) {
             uiZ = packToF32UI( signZ, expZ, sigZ>>1 );
             goto uiZ;
         }
+
+        // 謎の6ビットシフト
         sigZ <<= 6;
     } else {
         /*--------------------------------------------------------------------
