@@ -45,9 +45,15 @@ float32_t
     int_fast8_t shiftDist;
     union ui32_f32 uZ;
 
+    // 2つの値の差が小さくて仮数部が非常に小さい値になった場合，shiftDist が大きくなる
     shiftDist = softfloat_countLeadingZeros32( sig ) - 1;
     exp -= shiftDist;
+    
     if ( (7 <= shiftDist) && ((unsigned int) exp < 0xFD) ) {
+        // - 丸めビットの領域を仮数部の領域として扱う
+        //   その分，1.xxと表現されるビットの位置がLSB側に寄るので，丸めビット分の7を shiftDist から引く
+        // - 仮数部を左シフトする理由は分かる（1.xxの形にするため）
+        // - 減算により仮数部が0になったらそれは0なので指数部も0にする
         uZ.ui = packToF32UI( sign, sig ? exp : 0, sig<<(shiftDist - 7) );
         return uZ.f;
     } else {

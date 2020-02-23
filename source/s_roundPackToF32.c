@@ -55,16 +55,33 @@ float32_t
     roundingMode = softfloat_roundingMode;
     roundNearEven = (roundingMode == softfloat_round_near_even);
     roundIncrement = 0x40;
+
+    // 最近接丸めでは無い時
     if ( ! roundNearEven && (roundingMode != softfloat_round_near_maxMag) ) {
-        roundIncrement =
-            (roundingMode
-                 == (sign ? softfloat_round_min : softfloat_round_max))
-                ? 0x7F
-                : 0;
+        /*
+          | mode | sign | roundIncrement | 
+          |  min |    + |           0x00 |
+          |  min |    - |           0x7F |
+          |  max |    + |           0x7F |
+          |  max |    - |           0x00 |
+          | zero |  +/- |           0x00 |
+        */        
+        uint_fast8_t mode = sign ? softfloat_round_min : softfloat_round_max;
+        roundIncrement = mode == roundingMode ? 0x7F : 0;
     }
+
+    // softfloat_addMagsF32 ではこちらに渡される際に sig の値は0b01xx_xxxx_....となっている
+    // つまり仮数部はいかのようになる
+    // 0b01 | 仮数部(23bit) | xxx xxxx 
+    // よって下位7ビットが丸めビットとなる．    
     roundBits = sig & 0x7F;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
+
+   // 0xFD以上になるのは exp が 0xFD, 0xFE, および負の値のときのみ
+   // exp は 0xFF にはならない．
+   // なぜなら，この関数を呼ぶ前にそのような値はif文によってフィルタリングされるから
+   // (加算の話，乗算とかだとexpが0xFFになったりするかも)
     if ( 0xFD <= (unsigned int) exp ) {
         if ( exp < 0 ) {
             /*----------------------------------------------------------------
@@ -81,15 +98,27 @@ float32_t
         } else if ( (0xFD < exp) || (0x80000000 <= sig + roundIncrement) ) {
             /*----------------------------------------------------------------
             *----------------------------------------------------------------*/
+            // 0xFEでも強制的にオーバーフロー判定になるのは sig の値がすでに繰り上がった状態になっているから．
+                        
             softfloat_raiseFlags(
                 softfloat_flag_overflow | softfloat_flag_inexact );
+            
+            // オーバーフロー時に返す値は丸めモードや符号によって異なる
+            // https://docs.oracle.com/cd/E19957-01/806-4847/ncg_handle.html
+            // 
+            // | roundIncrement |             uiZ            |
+            // |              0 | | sign | 0xFE | 0x7FFFFF | |
+            // |      otherwise | | sign | 0xFF | 0x000000 | |
             uiZ = packToF32UI( sign, 0xFF, 0 ) - ! roundIncrement;
             goto uiZ;
         }
     }
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
+    
     sig = (sig + roundIncrement)>>7;
+
+    // 丸めが発生したら不正確例外フラグをセットする
     if ( roundBits ) {
         softfloat_exceptionFlags |= softfloat_flag_inexact;
 #ifdef SOFTFLOAT_ROUND_ODD
@@ -99,11 +128,17 @@ float32_t
         }
 #endif
     }
+    
+    // 最近接丸めの際にLSBを0にするための処理
     sig &= ~(uint_fast32_t) (! (roundBits ^ 0x40) & roundNearEven);
+
+    // 謎
     if ( ! sig ) exp = 0;
     /*------------------------------------------------------------------------
     *------------------------------------------------------------------------*/
  packReturn:
+    // sig のケチ表現が残ったままだけど，計算によってケチ表現の桁上がりも packToF32UI 上で吸収してくれる
+    // 言いたいことが書けないけど，正しく計算できているということだけは確か．（多少のトリッキーさは感じるけど）
     uiZ = packToF32UI( sign, exp, sig );
  uiZ:
     uZ.ui = uiZ;
